@@ -37,14 +37,14 @@ before using it :
 
 1. On CiviCRM side, you need to create a new price set in which all the products
 will be added automatically, to do this go to : **CiviContribute >> Manage Price Sets**
-then click **Add set of Price Fields" button. Fill the form and click save. It is advised
+then click **Add set of Price Fields" button**. Fill the form and click save. It is advised
 to pick clear name for the price set that help you to identity its purpose, such as "**Drupal Commerce Products**".
 
 ![priceset_create](https://user-images.githubusercontent.com/6275540/35095023-04e5e3f8-fc3f-11e7-8935-0de7053c6da8.gif)
 
 
 2. Now on drupal side, you need to go to **Store >> Configuration >> CiviCRM**,
-From there pick up a "Contribution type" (AKA financial type), all created contributions
+From there pick up a "**Contribution type**" (AKA **financial type**), all created contributions
  will be added to this contribution type. After that select the price field you 
  created in the first step. And finally, if you want the created contacts
  to be added automatically to specific group(s) then check any of the listed groups then click save.
@@ -57,7 +57,7 @@ From there pick up a "Contribution type" (AKA financial type), all created contr
  will create the contact for the purchaser along with the contribution, and the products
  will be automatically get added to the price set.
  
- Here is a sample contribution :
+ Here is a sample created contribution :
  
  <img width="676" alt="2018-01-18 13_00_33-find contributions _ disability rights uk" src="https://user-images.githubusercontent.com/6275540/35094998-f3eb94b2-fc3e-11e7-84d1-2b5adc56b512.png">
  
