@@ -1,0 +1,17 @@
+<?php
+
+/**
+ * Create civicrm pricefield record for any existing commerce product.
+ */
+function compucorp_commerce_civicrm_update_7100()
+{
+  if (!civicrm_initialize()) {
+    return;
+  }
+
+  $productsList = entity_load('commerce_product');
+
+  foreach($productsList as $product) {
+    _compucorp_commerce_civicrm_add_update_pricefield($product);
+  }
+}

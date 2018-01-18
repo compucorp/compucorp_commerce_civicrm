@@ -1,0 +1,9 @@
+name = Compucorp Commerce CiviCRM
+description = Integrates Drupal Commerce with CiviCRM (Compucorp Version)
+core = 7.x
+
+dependencies[] = commerce
+dependencies[] = civicrm
+
+files[] = compucorp_commerce_civicrm.rules.inc
+files[] = compucorp_commerce_civicrm.rules_defaults.inc
