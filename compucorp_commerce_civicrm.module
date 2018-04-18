@@ -519,7 +519,6 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
 
 
   $products = array();
-  $financial_type_id = variable_get('compucorp_commerce_civicrm_contribution_type');
 
   // get line items and quantities
   foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
@@ -532,7 +531,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
 
       $priceFieldID = civicrm_api3('PriceField', 'get', array(
         'sequential' => 1,
-        'name' => $line_item_sku,
+        'name' => CRM_Utils_String::titleToVar($line_item_sku),
         'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
       ));
 
@@ -544,16 +543,17 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
       }
 
 
-      $priceFieldValueID = civicrm_api3('PriceFieldValue', 'get', array(
+      $priceFieldValue = civicrm_api3('PriceFieldValue', 'get', array(
         'sequential' => 1,
         "price_field_id" => $priceFieldID,
       ));
-      $priceFieldValueID = $priceFieldValueID['id'];
+      $priceFieldValueID = $priceFieldValue['id'];
+      $financialTypeID = $priceFieldValue['values'][0]['financial_type_id'];
 
       $taxRate = 0;
       $taxRates = CRM_Core_PseudoConstant::getTaxRates();
-      if (array_key_exists($financial_type_id, $taxRates)) {
-        $taxRate = $taxRates[$financial_type_id];
+      if (array_key_exists($financialTypeID, $taxRates)) {
+        $taxRate = $taxRates[$financialTypeID];
       }
 
       // Update the product's quantity value.
@@ -564,16 +564,18 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
           'unit_price' => $unit_price,
           'price_field_value_id' => $priceFieldValueID,
           'tax_rate' => $taxRate,
+          'financial_type_id' => $financialTypeID,
         );
       }
       else {
-        $quantity = $products[$priceFieldID] + $quantity;
+        $quantity = $products[$priceFieldID]['quantity'] + $quantity;
         $products[$priceFieldID] = array(
           'title' => $title,
           'quantity' => $quantity,
           'unit_price' => $unit_price,
           'price_field_value_id' => $priceFieldValueID,
           'tax_rate' => $taxRate,
+          'financial_type_id' => $financialTypeID,
         );
       }
     }
@@ -594,7 +596,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
       'qty' => $values['quantity'],
       'unit_price' => $values['unit_price'],
       'line_total' => $values['unit_price'] * $values['quantity'],
-      'financial_type_id' =>  variable_get('compucorp_commerce_civicrm_contribution_type'),
+      'financial_type_id' =>  $values['financial_type_id'],
       'price_field_value_id' => $values['price_field_value_id'],
       'tax_amount' => $taxAmount,
     );
@@ -603,12 +605,11 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $taxAmountTotal += $taxAmount;
   }
 
-
   $params = array(
     'contact_id' => $cid,
     'receive_date' => date('Ymd'),
     'total_amount' => $order_total,
-    'financial_type_id' => $financial_type_id, // @FIXME this needs a sensible default
+    'financial_type_id' => variable_get('compucorp_commerce_civicrm_contribution_type'),
     'payment_instrument_id' => $payment_instrument_id,
     'non_deductible_amount' => 00.00,
     'fee_amount' => 00.00,
@@ -999,7 +1000,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
   $notes =  _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
 
   $products = array();
-  $financial_type_id = variable_get('compucorp_commerce_civicrm_contribution_type');
 
   // get line items and quantities
   foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
@@ -1012,21 +1012,22 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
       $priceFieldID = civicrm_api3('PriceField', 'get', array(
         'sequential' => 1,
-        'name' => $line_item_sku,
+        'name' => CRM_Utils_String::titleToVar($line_item_sku),
         'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
       ));
       $priceFieldID = $priceFieldID['id'];
 
-      $priceFieldValueID = civicrm_api3('PriceFieldValue', 'get', array(
+      $priceFieldValue= civicrm_api3('PriceFieldValue', 'get', array(
         'sequential' => 1,
         "price_field_id" => $priceFieldID,
       ));
-      $priceFieldValueID = $priceFieldValueID['id'];
+      $priceFieldValueID = $priceFieldValue['id'];
+      $financialTypeID  = $priceFieldValue['values'][0]['financial_type_id'];
 
       $taxRate = 0;
       $taxRates = CRM_Core_PseudoConstant::getTaxRates();
-      if (array_key_exists($financial_type_id, $taxRates)) {
-        $taxRate = $taxRates[$financial_type_id];
+      if (array_key_exists($financialTypeID, $taxRates)) {
+        $taxRate = $taxRates[$financialTypeID];
       }
 
       // Update the product's quantity value.
@@ -1037,16 +1038,18 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
           'unit_price' => $unit_price,
           'price_field_value_id' => $priceFieldValueID,
           'tax_rate' => $taxRate,
+          'financial_type_id' => $financialTypeID,
         );
       }
       else {
-        $quantity = $products[$priceFieldID] + $quantity;
+        $quantity = $products[$priceFieldID]['quantity'] + $quantity;
         $products[$priceFieldID] = array(
           'title' => $title,
           'quantity' => $quantity,
           'unit_price' => $unit_price,
           'price_field_value_id' => $priceFieldValueID,
           'tax_rate' => $taxRate,
+          'financial_type_id' => $financialTypeID,
         );
       }
     }
@@ -1086,7 +1089,7 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
       'qty' => $values['quantity'],
       'unit_price' => $values['unit_price'],
       'line_total' => $values['unit_price'] * $values['quantity'],
-      'financial_type_id' =>  variable_get('compucorp_commerce_civicrm_contribution_type'),
+      'financial_type_id' =>  $values['financial_type_id'],
       'price_field_value_id' => $values['price_field_value_id'],
       'tax_amount' => $taxAmount,
     );
@@ -1170,7 +1173,7 @@ function _compucorp_commerce_civicrm_cancel_civicrm_contribution($order) {
 function _compucorp_commerce_civicrm_disable_price_field($productSKU) {
   $priceField = civicrm_api3('PriceField', 'get', array(
     'sequential' => 1,
-    'name' => $productSKU,
+    'name' => CRM_Utils_String::titleToVar($productSKU),
     'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
   ));
 
@@ -1224,7 +1227,7 @@ function _compucorp_commerce_civicrm_add_update_pricefield($sku, $title, $price,
   $params = array(
     'sequential' => 1,
     'label' => $title,
-    'name' => $sku,
+    'name' => CRM_Utils_String::titleToVar($sku),
     'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
     'is_active' => 1,
     'is_required' => 0,
@@ -1243,12 +1246,13 @@ function _compucorp_commerce_civicrm_add_update_pricefield($sku, $title, $price,
     // get the price field ID if exist ( for update )
     $priceField = civicrm_api3('PriceField', 'get', array(
       'sequential' => 1,
-      'name' => $originalSKU, // we use other original sku in case it's changed
+      'name' => CRM_Utils_String::titleToVar($originalSKU), // we use the original sku in case it's changed
       'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
     ));
 
     if (!empty($priceField['id']))  {
       $params['id'] = $priceField['id'];
+      unset($params['financial_type_id']);
     }
   }
 
