@@ -506,7 +506,10 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
   }
 
-  // TODO: figure out where to get the shipping total from.
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
+  }
 
   if (!empty($order_wrapper->data)) {
     $payment_instrument_id = _compucorp_commerce_civicrm_map_payment_instrument($order_wrapper->data['payment_method']);
@@ -605,6 +608,20 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $taxAmountTotal += $taxAmount;
   }
 
+  // Adding Shipping rate as line item.
+  if (isset($order) && !empty($order->shipping_rates)) {
+    foreach ($order->shipping_rates as $key => $value) {
+      $lineItemsParams[$i] = array (
+        'label' => $value->data['shipping_service']['display_title'],
+        'qty' => 1,
+        'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'financial_type_id' => $financialTypeID,
+        'tax_amount' => 0,
+      );
+      $i++;
+    }
+  }
   $params = array(
     'contact_id' => $cid,
     'receive_date' => date('Ymd'),
@@ -997,6 +1014,11 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
   }
 
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
+  }
+
   $notes =  _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
 
   $products = array();
@@ -1265,4 +1287,21 @@ function _compucorp_commerce_civicrm_add_update_pricefield($sku, $title, $price,
   }
 
   return $priceField['id'];
+}
+
+/**
+ * Fetch Shipping total cost for a particular order.
+ *
+ * @param $order object Commerce Order.
+ *
+ * @return $shipping_total String Total Shipping cost.
+ */
+function _compucorp_commerce_civicrm_fetch_shipping_rates($order = '') {
+  $shipping_total = 0;
+  if (isset($order) && !empty($order->shipping_rates)) {
+    foreach ($order->shipping_rates as $key => $value) {
+      $shipping_total += ($value->data['shipping_service']['base_rate']['amount'] / 100);
+    }
+  }
+  return $shipping_total;
 }
