@@ -134,6 +134,14 @@ function compucorp_commerce_civicrm_admin() {
     '#description' => t('Select a Price Set for purchases, making a new set with a name like "Drupal purchase Set" is recommended.'),
   );
 
+  $form['compucorp_commerce_civicrm_shipping_financial_type'] = array(
+    '#type' => 'select',
+    '#title' =>  t('Shipping Financial Type') . ' <span class="form-required" title="This field is required.">*</span>',
+    '#default_value' => variable_get('compucorp_commerce_civicrm_shipping_financial_type', array()),
+    '#options' => _compucorp_commerce_civicrm_get_civicrm_entity_values('FinancialType', 'name'),
+    '#description' => t('Select a financial type for shipping, making a new type with a name like "Drupal shipping" is recommended.'),
+  );
+
   $form['compucorp_commerce_civicrm_groups'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Groups to add purchasers to'),
@@ -610,13 +618,14 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
 
   // Adding Shipping rate as line item.
   if (isset($order) && !empty($order->shipping_rates)) {
+    $shippingFinancialTypeID = variable_get('compucorp_commerce_civicrm_shipping_financial_type');
     foreach ($order->shipping_rates as $key => $value) {
       $lineItemsParams[$i] = array (
         'label' => $value->data['shipping_service']['display_title'],
         'qty' => 1,
         'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
         'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
-        'financial_type_id' => $financialTypeID,
+        'financial_type_id' => $shippingFinancialTypeID,
         'tax_amount' => 0,
       );
       $i++;
