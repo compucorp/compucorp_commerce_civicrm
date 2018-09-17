@@ -373,10 +373,14 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   $contact['first_name'] = $first_name;
   $contact['sort_name'] = "{$last_name}, {$first_name}";
   $contact['display_name'] = $billing_address['first_name'] . ' ' . $billing_address['last_name'];
-  $contact['contact_type'] = 'Individual';
   $contact['email'] = $order->mail;
+
   if (empty($contact['source'])) {
     $contact['source'] = 'Drupal Commerce purchase';
+  }
+
+  if (empty($contact['contact_type'])) {
+    $contact['contact_type'] = 'Individual';
   }
 
   // Create contact or update existing contact.
