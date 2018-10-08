@@ -369,21 +369,23 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   }
 
   // Prepare array to update contact via Civi API.
-  $contact['last_name'] = $last_name;
-  $contact['first_name'] = $first_name;
-  $contact['sort_name'] = "{$last_name}, {$first_name}";
-  $contact['display_name'] = $billing_address['first_name'] . ' ' . $billing_address['last_name'];
-  $contact['contact_type'] = 'Individual';
-  $contact['email'] = $order->mail;
-  if (empty($contact['source'])) {
-    $contact['source'] = 'Drupal Commerce purchase';
-  }
+  if (!isset($contact['id'])) {
+    $contact['last_name'] = $last_name;
+    $contact['first_name'] = $first_name;
+    $contact['sort_name'] = "{$last_name}, {$first_name}";
+    $contact['display_name'] = $first_name . ' ' . $last_name;
+    $contact['contact_type'] = 'Individual';
+    $contact['email'] = $order->mail;
+    if (empty($contact['source'])) {
+      $contact['source'] = 'Drupal Commerce purchase';
+    }
 
-  // Create contact or update existing contact.
-  $result = civicrm_api3('Contact', 'create', $contact);
-  if (!empty($result['is_error'])) {
-    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_update_contact(): %error', array('%error' => $result['error_message']), WATCHDOG_ERROR);
-    return FALSE;
+    // Create contact or update existing contact.
+    $result = civicrm_api3('Contact', 'create', $contact);
+    if (!empty($result['is_error'])) {
+      watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_update_contact(): %error', array('%error' => $result['error_message']), WATCHDOG_ERROR);
+      return FALSE;
+    }
   }
 
   if ($cid == 0)  {
@@ -394,6 +396,7 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   $params = array(
     'contact_id'             => $cid,
     'location_type_id'       => 'Billing',
+    'name'                   => $first_name . ' ' . $last_name,
     'city'                   => $billing_address['locality'],
     'postal_code'            => $billing_address['postal_code'],
     'street_address'         => $billing_address['thoroughfare'],
