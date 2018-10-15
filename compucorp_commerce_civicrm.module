@@ -637,15 +637,16 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     }
   }
 
+  $totalAmount = _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($order_total, $taxAmountTotal);
+
   $params = array(
     'contact_id' => $cid,
     'receive_date' => date('Ymd'),
-    'total_amount' => $order_total,
+    'total_amount' => $totalAmount,
     'financial_type_id' => variable_get('compucorp_commerce_civicrm_contribution_type'),
     'payment_instrument_id' => $payment_instrument_id,
     'non_deductible_amount' => 00.00,
     'fee_amount' => 00.00,
-    'net_amount' => $order_total + $taxAmountTotal,
     'tax_amount' => $taxAmountTotal,
     'trxn_id' => $txn_id,
     'invoice_id' => $order->order_id . '_dc',
@@ -669,6 +670,25 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
   }
 
   return TRUE;
+}
+
+/**
+ * CiviCRM API automatically calculates the tax on the
+ * total amount for versions <= 4.7.11 even if the tax amount
+ * is provided. This function ensures that the total amount
+ * for the contribution API is calculated correctly for different
+ * CiviCRM versions.
+ */
+function _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($orderTotal, $taxAmount) {
+  $civicrmVersion = civicrm_api3('Domain', 'getvalue', array(
+    'return' => 'version',
+  ));
+  $totalAmount = $orderTotal;
+  if ($civicrmVersion <= '4.7.11') {
+    $totalAmount = $orderTotal - $taxAmount;
+  }
+
+  return $totalAmount;
 }
 
 /**
@@ -1160,11 +1180,12 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
   $cid = _compucorp_commerce_civicrm_get_cid($order);
 
+  $totalAmount = _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($order_total, $taxAmountTotal);
+
   $params = array(
     'id' => $contributionID,
     'contact_id' => $cid,
-    'total_amount' => $order_total,
-    'net_amount' => $order_total + $taxAmountTotal,
+    'total_amount' => $totalAmount,
     'tax_amount' => $taxAmountTotal,
     'source' => $notes,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
