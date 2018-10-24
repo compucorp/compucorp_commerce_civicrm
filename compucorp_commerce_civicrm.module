@@ -529,9 +529,6 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $payment_instrument_id = _compucorp_commerce_civicrm_map_payment_instrument('credit');
   }
 
-  $notes = _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
-
-
   $products = array();
 
   // get line items and quantities
@@ -650,7 +647,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     'tax_amount' => $taxAmountTotal,
     'trxn_id' => $txn_id,
     'invoice_id' => $order->order_id . '_dc',
-    'source' => $notes,
+    'source' => 'Drupal Order Id : ' . $order->order_id,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
@@ -843,48 +840,6 @@ function _compucorp_commerce_civicrm_map_contribution_status($order_status) {
   return $id;
 }
 
-
-/**
- * Create string to insert for purchase activity details.
- */
-function _compucorp_commerce_civicrm_create_detail_string($order_wrapper) {
-  $str = '';
-  $titles = array();
-
-  // Populate the array of the quantities of the products on the order.
-  foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
-    if (in_array($line_item_wrapper->type->value(), commerce_product_line_item_types())) {
-      // Extract a product ID and quantity from the line item.
-      $line_item_sku = $line_item_wrapper->commerce_product->sku->value();
-      $quantity = $line_item_wrapper->quantity->value();
-      $title = $line_item_wrapper->commerce_product->title->value();
-
-      // Update the product's quantity value.
-      if (empty($products[$line_item_sku])) {
-        $products[$line_item_sku] = $quantity;
-        $titles[$title] = $quantity;
-      }
-      else {
-        $products[$line_item_sku] += $quantity;
-        $titles[$title] += $quantity;
-      }
-    }
-
-  }
-
-  // Display the product titles and the number purchased.
-  if (!empty($titles)) {
-    $strings = array();
-    foreach ($titles as $title => $quantity) {
-      $strings[] = $title . ' x ' . $quantity;
-    }
-    $str = implode(', ', $strings);
-  }
-
-  return $str;
-}
-
-
 /**
  * Displays a list of orders made by a customer.
  *
@@ -1055,8 +1010,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
   }
 
-  $notes =  _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
-
   $products = array();
 
   // get line items and quantities
@@ -1187,7 +1140,7 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     'contact_id' => $cid,
     'total_amount' => $totalAmount,
     'tax_amount' => $taxAmountTotal,
-    'source' => $notes,
+    'source' => 'Drupal Order Id : ' . $order->order_id,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
