@@ -651,6 +651,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
+    'is_pay_later' => _compucorp_commerce_civicrm_is_pay_later($order->status),
   );
   if (!empty($tax_field_id)) {
     $params['custom_' . $tax_field_id] = $tax_total;
@@ -838,6 +839,23 @@ function _compucorp_commerce_civicrm_map_contribution_status($order_status) {
   }
 
   return $id;
+}
+
+/**
+ * Determines if the order status is "pay later"
+ * or not.
+ *
+ * @param $order_status
+ *
+ * @return bool
+ */
+function _compucorp_commerce_civicrm_is_pay_later($order_status) {
+  $payLaterStatues = array('pending', 'processing');
+  if (in_array($order_status, $payLaterStatues)) {
+    return TRUE;
+  }
+
+  return FALSE;
 }
 
 /**
@@ -1144,6 +1162,7 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
+    'is_pay_later' => _compucorp_commerce_civicrm_is_pay_later($order->status),
   );
   if (!empty($tax_field_id)) {
     $params['custom_' . $tax_field_id] = $tax_total;
