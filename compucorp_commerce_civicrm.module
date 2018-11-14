@@ -883,15 +883,24 @@ function _compucorp_commerce_civicrm_display_customer_orders($customer) {
     $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
 
     // Get billing details.
-    $billing_profile = $order_wrapper->commerce_customer_billing->value();
-    $billing_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $billing_profile);
-    $billing_address = $billing_profile_wrapper->commerce_customer_address->value();
-    $billing_name = (empty($billing_address['name_line']) ? $billing_address['first_name'] . ' ' . $billing_address['last_name'] : $billing_address['name_line']);
+    $billing_name = '';
+    if (!empty($order_wrapper->commerce_customer_billing)) {
+      $billing_profile = $order_wrapper->commerce_customer_billing->value();
+    }
+
+    if (!empty($billing_profile)) {
+      $billing_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $billing_profile);
+      $billing_address = $billing_profile_wrapper->commerce_customer_address->value();
+      $billing_name = (empty($billing_address['name_line']) ? $billing_address['first_name'] . ' ' . $billing_address['last_name'] : $billing_address['name_line']);
+    }
 
     // Get shipping details.
     $shipping_name = '';
     if (!empty($order_wrapper->commerce_customer_shipping)) {
       $shipping_profile = $order_wrapper->commerce_customer_shipping->value();
+    }
+
+    if (!empty($shipping_profile)) {
       $shipping_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $shipping_profile);
       $shipping_address = $shipping_profile_wrapper->commerce_customer_address->value();
       $shipping_name = (empty($shipping_address['name_line']) ? $shipping_address['first_name'] . ' ' . $shipping_address['last_name'] : $shipping_address['name_line']);
