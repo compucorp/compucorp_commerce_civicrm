@@ -489,6 +489,17 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
  * make one up and add the contribution.
  */
 function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
+  $contributionEntity = civicrm_api3('Contribution', 'get', array(
+    'sequential' => 1,
+    'return' => 'id',
+    'invoice_id' => $order->order_id . '_dc',
+    'options' => array('limit' => 1),
+  ));
+
+  if (!empty($contributionEntity['id']))  {
+    return;
+  }
+
   _compucorp_commerce_civicrm_create_custom_contribution_fields();
 
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
