@@ -134,6 +134,14 @@ function compucorp_commerce_civicrm_admin() {
     '#description' => t('Select a Price Set for purchases, making a new set with a name like "Drupal purchase Set" is recommended.'),
   );
 
+  $form['compucorp_commerce_civicrm_shipping_financial_type'] = array(
+    '#type' => 'select',
+    '#title' =>  t('Shipping Financial Type') . ' <span class="form-required" title="This field is required.">*</span>',
+    '#default_value' => variable_get('compucorp_commerce_civicrm_shipping_financial_type', array()),
+    '#options' => _compucorp_commerce_civicrm_get_civicrm_entity_values('FinancialType', 'name'),
+    '#description' => t('Select a financial type for shipping, making a new type with a name like "Drupal shipping" is recommended.'),
+  );
+
   $form['compucorp_commerce_civicrm_groups'] = array(
     '#type' => 'checkboxes',
     '#title' => t('Groups to add purchasers to'),
@@ -365,10 +373,14 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   $contact['first_name'] = $first_name;
   $contact['sort_name'] = "{$last_name}, {$first_name}";
   $contact['display_name'] = $billing_address['first_name'] . ' ' . $billing_address['last_name'];
-  $contact['contact_type'] = 'Individual';
   $contact['email'] = $order->mail;
+
   if (empty($contact['source'])) {
     $contact['source'] = 'Drupal Commerce purchase';
+  }
+
+  if (empty($contact['contact_type'])) {
+    $contact['contact_type'] = 'Individual';
   }
 
   // Create contact or update existing contact.
@@ -506,7 +518,10 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
   }
 
-  // TODO: figure out where to get the shipping total from.
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
+  }
 
   if (!empty($order_wrapper->data)) {
     $payment_instrument_id = _compucorp_commerce_civicrm_map_payment_instrument($order_wrapper->data['payment_method']);
@@ -533,6 +548,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
         'sequential' => 1,
         'name' => CRM_Utils_String::titleToVar($line_item_sku),
         'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
+        'options' => array('limit' => 1),
       ));
 
 
@@ -546,6 +562,7 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
       $priceFieldValue = civicrm_api3('PriceFieldValue', 'get', array(
         'sequential' => 1,
         "price_field_id" => $priceFieldID,
+        'options' => array('limit' => 1),
       ));
       $priceFieldValueID = $priceFieldValue['id'];
       $financialTypeID = $priceFieldValue['values'][0]['financial_type_id'];
@@ -603,6 +620,22 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
 
     $i++;
     $taxAmountTotal += $taxAmount;
+  }
+
+  // Adding Shipping rate as line item.
+  if (isset($order) && !empty($order->shipping_rates)) {
+    $shippingFinancialTypeID = variable_get('compucorp_commerce_civicrm_shipping_financial_type');
+    foreach ($order->shipping_rates as $key => $value) {
+      $lineItemsParams[$i] = array (
+        'label' => $value->data['shipping_service']['display_title'],
+        'qty' => 1,
+        'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'financial_type_id' => $shippingFinancialTypeID,
+        'tax_amount' => 0,
+      );
+      $i++;
+    }
   }
 
   $params = array(
@@ -967,6 +1000,7 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     'sequential' => 1,
     'return' => "id",
     'invoice_id' => $order->order_id . "_dc",
+    'options' => array('limit' => 1),
   ));
 
   if (empty($contributionEntity['id']))  {
@@ -997,6 +1031,11 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
   }
 
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
+  }
+
   $notes =  _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
 
   $products = array();
@@ -1014,12 +1053,14 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
         'sequential' => 1,
         'name' => CRM_Utils_String::titleToVar($line_item_sku),
         'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
+        'options' => array('limit' => 1),
       ));
       $priceFieldID = $priceFieldID['id'];
 
       $priceFieldValue= civicrm_api3('PriceFieldValue', 'get', array(
         'sequential' => 1,
         "price_field_id" => $priceFieldID,
+        'options' => array('limit' => 1)
       ));
       $priceFieldValueID = $priceFieldValue['id'];
       $financialTypeID  = $priceFieldValue['values'][0]['financial_type_id'];
@@ -1102,6 +1143,22 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $taxAmountTotal += $taxAmount;
   }
 
+  // Adding Shipping rate as line item.
+  if (isset($order) && !empty($order->shipping_rates)) {
+    $shippingFinancialTypeID = variable_get('compucorp_commerce_civicrm_shipping_financial_type');
+    foreach ($order->shipping_rates as $key => $value) {
+      $lineItemsParams[$i] = array (
+        'label' => $value->data['shipping_service']['display_title'],
+        'qty' => 1,
+        'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
+        'financial_type_id' => $shippingFinancialTypeID,
+        'tax_amount' => 0,
+      );
+      $i++;
+    }
+  }
+
   $cid = _compucorp_commerce_civicrm_get_cid($order);
 
   $params = array(
@@ -1147,6 +1204,7 @@ function _compucorp_commerce_civicrm_cancel_civicrm_contribution($order) {
     'sequential' => 1,
     'return' => "id",
     'invoice_id' => $order->order_id . "_dc",
+    'options' => array('limit' => 1),
   ));
 
   if (!empty($contributionEntity['id']))  {
@@ -1175,6 +1233,7 @@ function _compucorp_commerce_civicrm_disable_price_field($productSKU) {
     'sequential' => 1,
     'name' => CRM_Utils_String::titleToVar($productSKU),
     'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
+    'options' => array('limit' => 1)
   ));
 
   if (!empty($priceField['id']))  {
@@ -1248,6 +1307,7 @@ function _compucorp_commerce_civicrm_add_update_pricefield($sku, $title, $price,
       'sequential' => 1,
       'name' => CRM_Utils_String::titleToVar($originalSKU), // we use the original sku in case it's changed
       'price_set_id' => variable_get('compucorp_commerce_civicrm_price_set'),
+      'options' => array('limit' => 1),
     ));
 
     if (!empty($priceField['id']))  {
@@ -1265,4 +1325,21 @@ function _compucorp_commerce_civicrm_add_update_pricefield($sku, $title, $price,
   }
 
   return $priceField['id'];
+}
+
+/**
+ * Fetch Shipping total cost for a particular order.
+ *
+ * @param $order object Commerce Order.
+ *
+ * @return $shipping_total String Total Shipping cost.
+ */
+function _compucorp_commerce_civicrm_fetch_shipping_rates($order = '') {
+  $shipping_total = 0;
+  if (isset($order) && !empty($order->shipping_rates)) {
+    foreach ($order->shipping_rates as $key => $value) {
+      $shipping_total += ($value->data['shipping_service']['base_rate']['amount'] / 100);
+    }
+  }
+  return $shipping_total;
 }
