@@ -219,7 +219,12 @@ function compucorp_commerce_civicrm_action_order_update($order)  {
     return;
   }
 
-  _compucorp_commerce_civicrm_update_contribution($order);
+  // Make sure that update contribution only runs when the order is finally saved.
+  // $order->shipping_rates key is absent on final order update so we can use that to determine
+  // when we want to update contribution.
+  if (empty($order->shipping_rates)) {
+    _compucorp_commerce_civicrm_update_contribution($order);
+  }
 }
 
 /**
@@ -1043,11 +1048,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
   }
 
-  // Fetch Shipping total.
-  if (module_exists('commerce_shipping')) {
-    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
-  }
-
   $products = array();
 
   // get line items and quantities
@@ -1151,6 +1151,20 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
     $i++;
     $taxAmountTotal += $taxAmount;
+  }
+
+  // Add shipping line items to $order->shipping_rates for further calculations.
+  foreach ($order->commerce_line_items['und'] as $item) {
+    $shipping_item = commerce_line_item_load($item['line_item_id']);
+    if ($shipping_item->type === 'shipping') {
+      $shipping_service_name = $shipping_item->data['shipping_service']['name'];
+      $order->shipping_rates[$shipping_service_name] = $shipping_item;
+    }
+  }
+
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
   }
 
   // Adding Shipping rate as line item.
