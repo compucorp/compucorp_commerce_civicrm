@@ -369,25 +369,27 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   }
 
   // Prepare array to update contact via Civi API.
-  $contact['last_name'] = $last_name;
-  $contact['first_name'] = $first_name;
-  $contact['sort_name'] = "{$last_name}, {$first_name}";
-  $contact['display_name'] = $billing_address['first_name'] . ' ' . $billing_address['last_name'];
-  $contact['email'] = $order->mail;
+  if (!isset($contact['id'])) {
+    $contact['last_name'] = $last_name;
+    $contact['first_name'] = $first_name;
+    $contact['sort_name'] = "{$last_name}, {$first_name}";
+    $contact['display_name'] = $first_name . ' ' . $last_name;
+    $contact['email'] = $order->mail;
 
-  if (empty($contact['source'])) {
-    $contact['source'] = 'Drupal Commerce purchase';
-  }
+    if (empty($contact['source'])) {
+      $contact['source'] = 'Drupal Commerce purchase';
+    }
 
-  if (empty($contact['contact_type'])) {
-    $contact['contact_type'] = 'Individual';
-  }
+    if (empty($contact['contact_type'])) {
+      $contact['contact_type'] = 'Individual';
+    }
 
-  // Create contact or update existing contact.
-  $result = civicrm_api3('Contact', 'create', $contact);
-  if (!empty($result['is_error'])) {
-    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_update_contact(): %error', array('%error' => $result['error_message']), WATCHDOG_ERROR);
-    return FALSE;
+    // Create contact or update existing contact.
+    $result = civicrm_api3('Contact', 'create', $contact);
+    if (!empty($result['is_error'])) {
+      watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_update_contact(): %error', array('%error' => $result['error_message']), WATCHDOG_ERROR);
+      return FALSE;
+    }
   }
 
   if ($cid == 0)  {
@@ -398,6 +400,7 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
   $params = array(
     'contact_id'             => $cid,
     'location_type_id'       => 'Billing',
+    'name'                   => $first_name . ' ' . $last_name,
     'city'                   => $billing_address['locality'],
     'postal_code'            => $billing_address['postal_code'],
     'street_address'         => $billing_address['thoroughfare'],
@@ -490,6 +493,17 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
  * make one up and add the contribution.
  */
 function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
+  $contributionEntity = civicrm_api3('Contribution', 'get', array(
+    'sequential' => 1,
+    'return' => 'id',
+    'invoice_id' => $order->order_id . '_dc',
+    'options' => array('limit' => 1),
+  ));
+
+  if (!empty($contributionEntity['id']))  {
+    return;
+  }
+
   _compucorp_commerce_civicrm_create_custom_contribution_fields();
 
   $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
@@ -529,9 +543,6 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
   else {
     $payment_instrument_id = _compucorp_commerce_civicrm_map_payment_instrument('credit');
   }
-
-  $notes = _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
-
 
   $products = array();
 
@@ -638,22 +649,24 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     }
   }
 
+  $totalAmount = _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($order_total, $taxAmountTotal);
+
   $params = array(
     'contact_id' => $cid,
     'receive_date' => date('Ymd'),
-    'total_amount' => $order_total,
+    'total_amount' => $totalAmount,
     'financial_type_id' => variable_get('compucorp_commerce_civicrm_contribution_type'),
     'payment_instrument_id' => $payment_instrument_id,
     'non_deductible_amount' => 00.00,
     'fee_amount' => 00.00,
-    'net_amount' => $order_total + $taxAmountTotal,
     'tax_amount' => $taxAmountTotal,
     'trxn_id' => $txn_id,
     'invoice_id' => $order->order_id . '_dc',
-    'source' => $notes,
+    'source' => 'Drupal Order Id : ' . $order->order_id,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
+    'is_pay_later' => _compucorp_commerce_civicrm_is_pay_later($order->status),
   );
   if (!empty($tax_field_id)) {
     $params['custom_' . $tax_field_id] = $tax_total;
@@ -670,6 +683,25 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
   }
 
   return TRUE;
+}
+
+/**
+ * CiviCRM API automatically calculates the tax on the
+ * total amount for versions <= 4.7.11 even if the tax amount
+ * is provided. This function ensures that the total amount
+ * for the contribution API is calculated correctly for different
+ * CiviCRM versions.
+ */
+function _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($orderTotal, $taxAmount) {
+  $civicrmVersion = civicrm_api3('Domain', 'getvalue', array(
+    'return' => 'version',
+  ));
+  $totalAmount = $orderTotal;
+  if ($civicrmVersion <= '4.7.11') {
+    $totalAmount = $orderTotal - $taxAmount;
+  }
+
+  return $totalAmount;
 }
 
 /**
@@ -824,47 +856,22 @@ function _compucorp_commerce_civicrm_map_contribution_status($order_status) {
   return $id;
 }
 
-
 /**
- * Create string to insert for purchase activity details.
+ * Determines if the order status is "pay later"
+ * or not.
+ *
+ * @param $order_status
+ *
+ * @return bool
  */
-function _compucorp_commerce_civicrm_create_detail_string($order_wrapper) {
-  $str = '';
-  $titles = array();
-
-  // Populate the array of the quantities of the products on the order.
-  foreach ($order_wrapper->commerce_line_items as $delta => $line_item_wrapper) {
-    if (in_array($line_item_wrapper->type->value(), commerce_product_line_item_types())) {
-      // Extract a product ID and quantity from the line item.
-      $line_item_sku = $line_item_wrapper->commerce_product->sku->value();
-      $quantity = $line_item_wrapper->quantity->value();
-      $title = $line_item_wrapper->commerce_product->title->value();
-
-      // Update the product's quantity value.
-      if (empty($products[$line_item_sku])) {
-        $products[$line_item_sku] = $quantity;
-        $titles[$title] = $quantity;
-      }
-      else {
-        $products[$line_item_sku] += $quantity;
-        $titles[$title] += $quantity;
-      }
-    }
-
+function _compucorp_commerce_civicrm_is_pay_later($order_status) {
+  $payLaterStatues = array('pending', 'processing');
+  if (in_array($order_status, $payLaterStatues)) {
+    return TRUE;
   }
 
-  // Display the product titles and the number purchased.
-  if (!empty($titles)) {
-    $strings = array();
-    foreach ($titles as $title => $quantity) {
-      $strings[] = $title . ' x ' . $quantity;
-    }
-    $str = implode(', ', $strings);
-  }
-
-  return $str;
+  return FALSE;
 }
-
 
 /**
  * Displays a list of orders made by a customer.
@@ -891,15 +898,24 @@ function _compucorp_commerce_civicrm_display_customer_orders($customer) {
     $order_wrapper = entity_metadata_wrapper('commerce_order', $order);
 
     // Get billing details.
-    $billing_profile = $order_wrapper->commerce_customer_billing->value();
-    $billing_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $billing_profile);
-    $billing_address = $billing_profile_wrapper->commerce_customer_address->value();
-    $billing_name = (empty($billing_address['name_line']) ? $billing_address['first_name'] . ' ' . $billing_address['last_name'] : $billing_address['name_line']);
+    $billing_name = '';
+    if (!empty($order_wrapper->commerce_customer_billing)) {
+      $billing_profile = $order_wrapper->commerce_customer_billing->value();
+    }
+
+    if (!empty($billing_profile)) {
+      $billing_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $billing_profile);
+      $billing_address = $billing_profile_wrapper->commerce_customer_address->value();
+      $billing_name = (empty($billing_address['name_line']) ? $billing_address['first_name'] . ' ' . $billing_address['last_name'] : $billing_address['name_line']);
+    }
 
     // Get shipping details.
     $shipping_name = '';
     if (!empty($order_wrapper->commerce_customer_shipping)) {
       $shipping_profile = $order_wrapper->commerce_customer_shipping->value();
+    }
+
+    if (!empty($shipping_profile)) {
       $shipping_profile_wrapper = entity_metadata_wrapper('commerce_customer_profile', $shipping_profile);
       $shipping_address = $shipping_profile_wrapper->commerce_customer_address->value();
       $shipping_name = (empty($shipping_address['name_line']) ? $shipping_address['first_name'] . ' ' . $shipping_address['last_name'] : $shipping_address['name_line']);
@@ -1036,8 +1052,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
   }
 
-  $notes =  _compucorp_commerce_civicrm_create_detail_string($order_wrapper);
-
   $products = array();
 
   // get line items and quantities
@@ -1161,16 +1175,18 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
   $cid = _compucorp_commerce_civicrm_get_cid($order);
 
+  $totalAmount = _compucorp_commerce_civicrm_calculateTotalAmountForCiviAPI($order_total, $taxAmountTotal);
+
   $params = array(
     'id' => $contributionID,
     'contact_id' => $cid,
-    'total_amount' => $order_total,
-    'net_amount' => $order_total + $taxAmountTotal,
+    'total_amount' => $totalAmount,
     'tax_amount' => $taxAmountTotal,
-    'source' => $notes,
+    'source' => 'Drupal Order Id : ' . $order->order_id,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
     'api.line_item.create' => $lineItemsParams,
+    'is_pay_later' => _compucorp_commerce_civicrm_is_pay_later($order->status),
   );
   if (!empty($tax_field_id)) {
     $params['custom_' . $tax_field_id] = $tax_total;
