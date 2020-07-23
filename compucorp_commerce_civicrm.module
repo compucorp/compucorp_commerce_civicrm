@@ -681,11 +681,29 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $params['custom_' . $shipping_field_id] = $shipping_total;
   }
 
-  $contribution = civicrm_api3('Contribution', 'create', $params);
+  $contributionData = civicrm_api3('Contribution', 'create', $params);
 
   // Log the error, but continue.
-  if (civicrm_error($contribution)) {
-    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_contribution(): %error', array('%error' => $contribution['error_message']), WATCHDOG_ERROR);
+  if (civicrm_error($contributionData)) {
+    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_contribution(): %error', array('%error' => $contributionData['error_message']), WATCHDOG_ERROR);
+  }
+
+  // Create financial Item entries.
+  $contributionId = $contributionData['id'];
+  $contribution = new CRM_Contribute_DAO_Contribution();
+  $contribution->id = $contributionId;
+  $contribution->find(TRUE);
+
+  $lineItems = $contributionData['values'][$contributionData['id']]['api.line_item.create'];
+  foreach($lineItems as $lineItemData) {
+    $lineItemId = $lineItemData['id'];
+    $lineItem = new CRM_Price_DAO_LineItem();
+    $lineItem->id = $lineItemId;
+    $lineItem->find(TRUE);
+    CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution);
+    if (!empty((float) $contribution->tax_amount)) {
+      CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution, TRUE);
+    }
   }
 
   return TRUE;
