@@ -681,6 +681,17 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $params['custom_' . $shipping_field_id] = $shipping_total;
   }
 
+  // Set purchase order number for sites that have it.
+  $purchaseOrderCustomField = civicrm_api3('CustomField', 'get', [
+    'sequential' => 1,
+    'return' => ['id'],
+    'custom_group_id' => 'purchase_order',
+    'name' => 'purchase_order_number',
+  ]);
+  if (!empty($purchaseOrderCustomField['id'])) {
+    $params['custom_' . $purchaseOrderCustomField['id']] = $order_wrapper->field_purchase_order_number->value();
+  }
+
   $contributionData = civicrm_api3('Contribution', 'create', $params);
 
   // Log the error, but continue.
