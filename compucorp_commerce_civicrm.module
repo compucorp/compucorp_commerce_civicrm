@@ -641,10 +641,14 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
 
   // Adding Shipping rate as line item.
   if (isset($order) && !empty($order->shipping_rates)) {
+    $defaultContributionAmountPriceFieldId = 1;
+    $defaultContributionAmountPriceFieldValueId = 1;
     $shippingFinancialTypeID = variable_get('compucorp_commerce_civicrm_shipping_financial_type');
     foreach ($order->shipping_rates as $key => $value) {
       $lineItemsParams[$i] = array (
         'label' => $value->data['shipping_service']['display_title'],
+        'price_field_id' => $defaultContributionAmountPriceFieldId,
+        'price_field_value_id' => $defaultContributionAmountPriceFieldValueId,
         'qty' => 1,
         'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
         'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
@@ -1183,6 +1187,9 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     $taxAmount = $taxAmount['tax_amount'];
 
     $lineItemsParams[$i] = array(
+      'entity_id' => $contributionID,
+      'entity_table' => 'civicrm_contribution',
+      'contribution_id' => $contributionID,
       'label' => $values['title'],
       'price_field_id' => $priceFieldID,
       'qty' => $values['quantity'],
@@ -1217,17 +1224,55 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
   // Adding Shipping rate as line item.
   if (isset($order) && !empty($order->shipping_rates)) {
+    $defaultContributionAmountPriceFieldId = 1;
+    $defaultContributionAmountPriceFieldValueId = 1;
     $shippingFinancialTypeID = variable_get('compucorp_commerce_civicrm_shipping_financial_type');
     foreach ($order->shipping_rates as $key => $value) {
       $lineItemsParams[$i] = array (
+        'entity_id' => $contributionID,
+        'entity_table' => 'civicrm_contribution',
+        'contribution_id' => $contributionID,
         'label' => $value->data['shipping_service']['display_title'],
+        'price_field_id' => $defaultContributionAmountPriceFieldId,
+        'price_field_value_id' => $defaultContributionAmountPriceFieldValueId,
         'qty' => 1,
         'unit_price' => $value->data['shipping_service']['base_rate']['amount'] / 100,
         'line_total' => $value->data['shipping_service']['base_rate']['amount'] / 100,
         'financial_type_id' => $shippingFinancialTypeID,
         'tax_amount' => 0,
       );
+
+      if(!empty($products[$defaultContributionAmountPriceFieldId]['id']))  {
+        $lineItemsParams[$i]['id'] = $products[$defaultContributionAmountPriceFieldId]['id'];
+      }
+
       $i++;
+    }
+  }
+
+  $i = 0;
+  foreach ($lineItemsParams as $lineItemsParam) {
+    $lineItemResponse = civicrm_api3('LineItem', 'create', $lineItemsParam);
+
+    if(!empty($lineItemResponse['id']))  {
+      $lineItemsParams[$i]['id'] = $lineItemResponse['id'];
+    }
+
+    $i++;
+  }
+
+  // Create financial Item entries.
+  $contribution = new CRM_Contribute_DAO_Contribution();
+  $contribution->id = $contributionID;
+  $contribution->find(TRUE);
+  foreach($lineItemsParams as $lineItemData) {
+    $lineItemId = $lineItemData['id'];
+    $lineItem = new CRM_Price_DAO_LineItem();
+    $lineItem->id = $lineItemId;
+    $lineItem->find(TRUE);
+    CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution);
+    if (!empty((float) $contribution->tax_amount)) {
+      CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution, TRUE);
     }
   }
 
@@ -1243,7 +1288,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
     'source' => 'Drupal Order Id : ' . $order->order_id,
     'contribution_status_id' => _compucorp_commerce_civicrm_map_contribution_status($order->status),
     'skipLineItem' => 1,
-    'api.line_item.create' => $lineItemsParams,
     'is_pay_later' => _compucorp_commerce_civicrm_is_pay_later($order->status),
   );
   if (!empty($tax_field_id)) {
