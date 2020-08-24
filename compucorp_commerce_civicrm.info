@@ -2,6 +2,8 @@ name = Compucorp Commerce CiviCRM
 description = Integrates Drupal Commerce with CiviCRM (Compucorp Version)
 core = 7.x
 
+version = "7.x-1.2"
+
 dependencies[] = commerce
 dependencies[] = civicrm
 
