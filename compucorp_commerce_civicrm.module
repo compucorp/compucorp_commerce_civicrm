@@ -219,7 +219,12 @@ function compucorp_commerce_civicrm_action_order_update($order)  {
     return;
   }
 
-  _compucorp_commerce_civicrm_update_contribution($order);
+  // Make sure that update contribution only runs when the order is finally saved.
+  // $order->shipping_rates key is absent on final order update so we can use that to determine
+  // when we want to update contribution.
+  if (empty($order->shipping_rates)) {
+    _compucorp_commerce_civicrm_update_contribution($order);
+  }
 }
 
 /**
@@ -423,12 +428,12 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
     $params['id'] = $current_billing_location['id'];
   }
 
-  if ( ($provinceID = _compucorp_commerce_civicrm_validate_province($billing_address['administrative_area'])) !== false )  {
-    $params = array_merge($params, array( 'state_province_id'=> $provinceID));
+  if (($province = _compucorp_commerce_civicrm_get_province($billing_address)) !== null)  {
+    $params = array_merge($params, array( 'state_province_id'=> $province));
   }
 
-  if ( ($countryID = _compucorp_commerce_civicrm_validate_country($billing_address['country'])) !== false )  {
-    $params = array_merge($params, array( 'country_id'=> $countryID));
+  if (!empty($billing_address['country'])) {
+    $params = array_merge($params, array( 'country_id'=> $billing_address['country']));
   }
 
   $params['is_primary'] = 1;
@@ -467,13 +472,14 @@ function _compucorp_commerce_civicrm_add_update_contact($cid, $order) {
       $params['id'] = $current_delivery_location['id'];
     }
 
-    if ( ($provinceID = _compucorp_commerce_civicrm_validate_province($delivery_address['administrative_area'])) !== false )  {
-      $params = array_merge($params, array( 'state_province_id'=> $provinceID));
+    if (($province = _compucorp_commerce_civicrm_get_province($delivery_address)) !== null) {
+      $params = array_merge($params, array( 'state_province_id'=> $province));
     }
 
-    if ( ($countryID = _compucorp_commerce_civicrm_validate_country($delivery_address['country'])) !== false )  {
-      $params = array_merge($params, array( 'country_id'=> $countryID));
+    if (!empty($delivery_address['country'])) {
+      $params = array_merge($params, array( 'country_id'=> $delivery_address['country']));
     }
+
     // Add / update the location.
     $new_location = civicrm_api3('Address', 'create', $params);
   }
@@ -675,11 +681,40 @@ function _compucorp_commerce_civicrm_add_contribution($cid, &$order) {
     $params['custom_' . $shipping_field_id] = $shipping_total;
   }
 
-  $contribution = civicrm_api3('Contribution', 'create', $params);
+  // Set purchase order number for sites that have it.
+  $purchaseOrderCustomField = civicrm_api3('CustomField', 'get', [
+    'sequential' => 1,
+    'return' => ['id'],
+    'custom_group_id' => 'purchase_order',
+    'name' => 'purchase_order_number',
+  ]);
+  if (!empty($purchaseOrderCustomField['id'])) {
+    $params['custom_' . $purchaseOrderCustomField['id']] = $order_wrapper->field_purchase_order_number->value();
+  }
+
+  $contributionData = civicrm_api3('Contribution', 'create', $params);
 
   // Log the error, but continue.
-  if (civicrm_error($contribution)) {
-    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_contribution(): %error', array('%error' => $contribution['error_message']), WATCHDOG_ERROR);
+  if (civicrm_error($contributionData)) {
+    watchdog('compucorp_commerce_civicrm', '_compucorp_commerce_civicrm_add_contribution(): %error', array('%error' => $contributionData['error_message']), WATCHDOG_ERROR);
+  }
+
+  // Create financial Item entries.
+  $contributionId = $contributionData['id'];
+  $contribution = new CRM_Contribute_DAO_Contribution();
+  $contribution->id = $contributionId;
+  $contribution->find(TRUE);
+
+  $lineItems = $contributionData['values'][$contributionData['id']]['api.line_item.create'];
+  foreach($lineItems as $lineItemData) {
+    $lineItemId = $lineItemData['id'];
+    $lineItem = new CRM_Price_DAO_LineItem();
+    $lineItem->id = $lineItemId;
+    $lineItem->find(TRUE);
+    CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution);
+    if (!empty((float) $contribution->tax_amount)) {
+      CRM_Financial_BAO_FinancialItem::add($lineItem, $contribution, TRUE);
+    }
   }
 
   return TRUE;
@@ -977,31 +1012,45 @@ function _compucorp_commerce_civicrm_display_customer_orders($customer) {
   return $build;
 }
 
-function _compucorp_commerce_civicrm_validate_country($country)  {
-  if (!empty($country))  {
-    $allCountries = CRM_Core_PseudoConstant::countryIsoCode();
-    $result = civicrm_api3('Setting', 'get', array(
+/**
+ * Gets civicrm province name given
+ * from the given commerce address.
+ *
+ * @param array $address
+ * @param int $civicrmCountryID
+ *
+ * @return String|NULL
+ */
+function _compucorp_commerce_civicrm_get_province($address)  {
+  if (!empty($address['administrative_area'])) {
+    $country = civicrm_api3('Country', 'get', [
       'sequential' => 1,
-      'return' => "countryLimit",
-    ));
-    $countryLimit = $result['values'][0]['countryLimit'];
-    $checkCountry = array_search($country, $allCountries);
-    if ($checkCountry !== false && in_array($checkCountry, $countryLimit))  {
-      return $checkCountry;
-    }
-  }
-  return false;
-}
+      'iso_code' => $address['country'],
+    ]);
 
-function _compucorp_commerce_civicrm_validate_province($province)  {
-  if (!empty($province))  {
-    $allProvinces = CRM_Core_PseudoConstant::stateProvinceAbbreviation();
-    $checkProvince = array_search($province, $allProvinces);
-    if ($checkProvince !== false)  {
-      return $checkProvince;
+    if (empty($country['id'])) {
+      return null;
     }
+    $countryID = $country['id'];
+
+    $searchField = 'abbreviation';
+    if (strlen($address['administrative_area']) > 4) {
+      $searchField = 'name';
+    }
+
+    $stateProvince = civicrm_api3('StateProvince', 'get', [
+      'sequential' => 1,
+      'country_id' => $countryID,
+      $searchField => $address['administrative_area'],
+    ]);
+    if (empty($stateProvince['values'][0]['name'])) {
+      return null;
+    }
+
+    return $stateProvince['values'][0]['name'];
   }
-  return false;
+
+  return null;
 }
 
 /**
@@ -1045,11 +1094,6 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
   if (module_exists('commerce_tax')) {
     $components = $order_wrapper->commerce_order_total->data->value();
     $tax_total = commerce_tax_total_amount($components['components'], TRUE, commerce_default_currency()) / 100;
-  }
-
-  // Fetch Shipping total.
-  if (module_exists('commerce_shipping')) {
-    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
   }
 
   $products = array();
@@ -1155,6 +1199,20 @@ function _compucorp_commerce_civicrm_update_contribution($order) {
 
     $i++;
     $taxAmountTotal += $taxAmount;
+  }
+
+  // Add shipping line items to $order->shipping_rates for further calculations.
+  foreach ($order->commerce_line_items['und'] as $item) {
+    $shipping_item = commerce_line_item_load($item['line_item_id']);
+    if ($shipping_item->type === 'shipping') {
+      $shipping_service_name = $shipping_item->data['shipping_service']['name'];
+      $order->shipping_rates[$shipping_service_name] = $shipping_item;
+    }
+  }
+
+  // Fetch Shipping total.
+  if (module_exists('commerce_shipping')) {
+    $shipping_total = _compucorp_commerce_civicrm_fetch_shipping_rates($order);
   }
 
   // Adding Shipping rate as line item.
